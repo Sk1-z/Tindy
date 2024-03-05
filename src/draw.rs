@@ -1,4 +1,4 @@
-use crate::{cursor, Terminal};
+use crate::Terminal;
 use std::env::args;
 use std::io::{stdout, Write};
 
@@ -35,7 +35,7 @@ pub fn frame(term: &Terminal, move_mode: bool) {
     }
 
     printf!(
-        "\x1b[H  Tindy - {}\x1b[0m",
+        "\x1b[H  Tindy - {}.md\x1b[0m",
         args().collect::<Vec<String>>()[1]
     );
 }

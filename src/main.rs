@@ -35,10 +35,11 @@ fn main() {
     let term = Terminal::get();
     term.make_raw();
 
-    let mut file_name: &Path;
-    let argv: Vec<String> = args().collect();
+    let file_name: &Path;
+    let mut argv: Vec<String> = args().collect();
     if argv.len() == 2 {
-        file_name = Path::new(&argv[1])
+        argv[1].push_str(".md");
+        file_name = Path::new(&argv[1]);
     } else {
         printlnf!("\x1b[1;91m[ERROR]\x1b[0m Must pass a file name. If it does not exist it will be created.");
         exit(1);
@@ -65,9 +66,6 @@ fn main() {
 
     create_dir_all("/tmp/tindy").unwrap();
     let mut file = open_options.open(file_name).unwrap();
-    let mut temp_file = open_options
-        .open(format!("/tmp/tindy/{}", file_name.to_str().unwrap()))
-        .unwrap();
 
     let term_rc: Rc<RefCell<Terminal>> = Rc::new(RefCell::new(term));
     let lines_rc: Rc<RefCell<LineList>> = Rc::new(RefCell::new(lines));
@@ -150,6 +148,4 @@ fn main() {
             _ => {}
         }
     }
-
-    remove_file(format!("/tmp/tindy/{}", file_name.to_str().unwrap())).unwrap();
 }
