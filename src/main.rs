@@ -14,64 +14,51 @@ macro_rules! printlnf {
     }};
 }
 
+mod cursor;
 mod draw;
+mod handle;
 mod line;
 mod terminal;
 
-use line::{Line, LineList};
+use handle::*;
+use line::{list::LineList, Line};
+use std::cell::RefCell;
 use std::env::args;
-use std::fs::{create_dir_all, remove_file, File, OpenOptions};
-use std::io::{stdout, Read, Write};
+use std::fs::{create_dir_all, remove_file, OpenOptions};
+use std::io::{stdout, Write};
 use std::path::Path;
+use std::process::exit;
+use std::rc::Rc;
 use terminal::*;
 
 fn main() {
     let term = Terminal::get();
     term.make_raw();
-    // printf!("\x1b[2J\x1b[H");
-    // printlnf!("1");
-    // for _ in 0..term.row_sz - 1 {
-    //     printlnf!("2");
-    // }
-    //
-    // loop {}
 
     let mut file_name: &Path;
     let argv: Vec<String> = args().collect();
     if argv.len() == 2 {
         file_name = Path::new(&argv[1])
     } else {
-        file_name = Path::new(".tindy.temp")
+        printlnf!("\x1b[1;91m[ERROR]\x1b[0m Must pass a file name. If it does not exist it will be created.");
+        exit(1);
     }
+
+    let mut move_mode = false;
 
     let mut lines = LineList::new();
+    lines.load_from_file(file_name);
 
-    {
-        printf!("\x1b[2J\x1b[H");
+    draw::clear();
+    draw::frame(&term, move_mode);
 
-        let reading_file = File::open(file_name);
+    cursor::home();
+    lines.print_all(term.row_sz);
 
-        match reading_file {
-            Ok(mut file) => {
-                let mut file_content = String::new();
-                file.read_to_string(&mut file_content).unwrap();
-                let file_lines: Vec<&str> = file_content.trim_end().split("\n").collect();
-                file_lines
-                    .iter()
-                    .for_each(|line| lines.new_line(Line::new(String::from(line.to_owned()))));
-
-                lines.print_all(term.row_sz);
-                printf!("\x1b[H");
-                lines.row = 1;
-                lines.reset_line_pos();
-                lines.print_line();
-            }
-            Err(_) => {
-                lines.new_line(Line::new_empty());
-                lines.print_line();
-            }
-        }
-    }
+    cursor::home();
+    lines.row = 1;
+    lines.reset_line_pos();
+    lines.print_line(term.row_sz);
 
     let mut open_options = OpenOptions::new();
     open_options.read(true).write(true).create(true);
@@ -82,21 +69,39 @@ fn main() {
         .open(format!("/tmp/tindy/{}", file_name.to_str().unwrap()))
         .unwrap();
 
+    let term_rc: Rc<RefCell<Terminal>> = Rc::new(RefCell::new(term));
+    let lines_rc: Rc<RefCell<LineList>> = Rc::new(RefCell::new(lines));
+
+    let mut movement = movement::MovementHandler::new(Rc::clone(&term_rc), Rc::clone(&lines_rc));
+    let mut action = action::ActionHandler::new(Rc::clone(&term_rc), Rc::clone(&lines_rc));
+
     loop {
         let c = get_char();
 
         match c as usize {
-            // ctrl-e or  ctrl-w
-            5 | 23 => {
+            // Exit
+            // ctrl-e
+            5 => {
                 printf!("\n\x1b[2J\x1b[0m");
-                let joined_lines = lines.join();
-
-                // printlnf!("\n{}", joined_lines);
-
-                file.write_all(joined_lines.as_bytes()).unwrap();
-                file.flush().unwrap();
-
                 break;
+            }
+            // Write to file
+            // ctrl-w
+            23 => action.save(&mut file),
+            // Movement mode
+            // ctrl - m
+            1 => {
+                if move_mode {
+                    move_mode = false;
+                    printf!("\x1b[s");
+                    draw::frame(&term_rc.borrow(), move_mode);
+                    printf!("\x1b[u");
+                } else {
+                    move_mode = true;
+                    printf!("\x1b[s");
+                    draw::frame(&term_rc.borrow(), move_mode);
+                    printf!("\x1b[u");
+                }
             }
             // Handle arrow presses which are sent as three characters or exit
             // 27 ESC -> 91 [ -> A, B, C, or D
@@ -105,140 +110,46 @@ fn main() {
                 _ = get_char();
                 match get_char() as usize {
                     // up arrow
-                    65 => {
-                        if lines.row == lines.top_row && lines.row != 1 {
-                            printf!("\x1b[2J\x1b[H");
+                    65 => movement.handle_up(move_mode),
 
-                            lines.top_row -= term.row_sz;
-                            lines.row = lines.top_row;
-
-                            lines.print_all(term.row_sz);
-                        } else {
-                            if lines.row != 1 {
-                                lines.row -= 1;
-
-                                printf!("\x1b[1F");
-                                lines.print_line();
-                            }
-                        }
-                    }
                     // down arrow
-                    66 => {
-                        if lines.row == lines.top_row + term.row_sz - 1 {
-                            printf!("\x1b[2J\x1b[H");
+                    66 => movement.handle_down(move_mode),
 
-                            lines.row += 1;
-                            lines.top_row = lines.row;
-
-                            lines.print_all(term.row_sz);
-                            printf!("\x1b[H");
-
-                            lines.row = lines.top_row;
-                            lines.print_line();
-                        } else {
-                            if lines.line_count() != lines.row {
-                                lines.row += 1;
-
-                                printf!("\x1b[1E");
-                                lines.print_line();
-                            }
-                        }
-                    }
                     // right arrow
-                    67 => {
-                        if lines.current_pos() != lines.line_length() {
-                            lines.set_pos_relative(1, false);
-                            lines.print_line();
-                        }
-                    }
+                    67 => movement.handle_right(),
+
                     // left arrow
-                    68 => {
-                        if lines.current_pos() != 0 {
-                            lines.set_pos_relative(1, true);
-                            lines.print_line();
-                        }
-                    }
+                    68 => movement.handle_left(),
                     _ => {}
                 }
             }
             // Enter
-            10 => {
-                let chunk = lines.remove_chunk(lines.current_pos(), lines.line_length());
-                if lines.line_count() == lines.row {
-                    lines.new_line(Line::new_empty());
-                } else {
-                    lines.insert_line(lines.row, Line::new_empty());
-                }
-                lines.row += 1;
-
-                lines.reset_line_pos();
-                for c in chunk.chars() {
-                    lines.add(c);
-                }
-                lines.reset_line_pos();
-
-                printf!("\x1b[2J\x1b[H");
-                if lines.row == lines.top_row + term.row_sz {
-                    lines.top_row = lines.row;
-                    lines.print_all(term.row_sz);
-
-                    printf!("\x1b[H");
-                    lines.row = lines.top_row;
-                    lines.print_line();
-                } else {
-                    lines.print_all_from_top(term.row_sz);
-                    printf!("\x1b[H");
-                    let move_sz = (lines.row % term.row_sz) - 1;
-                    if move_sz != 0 {
-                        printf!("\x1b[{}E", move_sz);
-                    }
-                }
-
-                lines.print_line();
-            }
+            10 => action.new_line(move_mode),
             // Backspace or ctrl-x
-            127 | 24 => {
-                if !(lines.current_pos() == 0 && lines.row == 1) {
-                    if lines.current_pos() == 0 {
-                        let chunk = lines.remove_chunk(0, lines.line_length());
-                        lines.remove_line();
-
-                        lines.row -= 1;
-                        for c in chunk.chars() {
-                            lines.add(c);
-                        }
-                        lines.set_pos_relative(chunk.len(), true);
-
-                        printf!("\x1b[2J\x1b[H");
-                        if lines.row + 1 == lines.top_row && lines.row != 1 {
-                            lines.top_row -= term.row_sz;
-                            lines.row = lines.top_row;
-                            lines.print_all(term.row_sz);
-                        } else {
-                            lines.print_all_from_top(term.row_sz);
-                            printf!("\x1b[H");
-                            let move_sz = (lines.row % term.row_sz) - 1;
-                            if move_sz != 0 {
-                                printf!("\x1b[{}E", move_sz);
-                            }
-                        }
-                        lines.print_line();
-                    } else {
-                        lines.remove();
-                        lines.print_line();
-                    }
-                }
-            }
+            127 | 24 => action.delete(move_mode),
             32..=126 => {
-                lines.add(c);
-                lines.print_line();
+                if move_mode {
+                    match c as usize {
+                        // k
+                        107 => movement.handle_up(move_mode),
+
+                        // j
+                        106 => movement.handle_down(move_mode),
+
+                        // l
+                        108 => movement.handle_right(),
+
+                        // h
+                        104 => movement.handle_left(),
+                        _ => action.add_char(c),
+                    }
+                } else {
+                    action.add_char(c)
+                }
             }
             _ => {}
         }
     }
 
     remove_file(format!("/tmp/tindy/{}", file_name.to_str().unwrap())).unwrap();
-    if file_name.to_str().unwrap() == ".tindy.temp" {
-        remove_file(".tindy.temp").unwrap();
-    }
 }

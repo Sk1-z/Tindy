@@ -1,35 +1,7 @@
-use std::io::{stdout, Write};
-
-pub struct Line {
-    pos: usize,
-    str: String,
-}
-
-impl Line {
-    pub fn new(str: String) -> Line {
-        Line {
-            pos: str.len(),
-            str,
-        }
-    }
-
-    pub fn new_empty() -> Line {
-        Line {
-            pos: 0,
-            str: String::new(),
-        }
-    }
-
-    pub fn add(&mut self, c: char) {
-        self.str.insert(self.pos, c);
-        self.pos += 1;
-    }
-
-    pub fn remove(&mut self) {
-        let _ = self.str.remove(self.pos - 1);
-        self.pos -= 1;
-    }
-}
+use super::Line;
+use std::fs::File;
+use std::io::{stdout, Read, Write};
+use std::path::Path;
 
 pub struct LineList {
     pub top_row: usize,
@@ -43,6 +15,28 @@ impl LineList {
             top_row: 1,
             row: 1,
             e: Vec::new(),
+        }
+    }
+
+    pub fn load_from_file(&mut self, file_name: &Path) {
+        {
+            printf!("\x1b[2J\x1b[H");
+
+            let reading_file = File::open(file_name);
+
+            match reading_file {
+                Ok(mut file) => {
+                    let mut file_content = String::new();
+                    file.read_to_string(&mut file_content).unwrap();
+                    let file_lines: Vec<&str> = file_content.trim_end().split("\n").collect();
+                    file_lines
+                        .iter()
+                        .for_each(|line| self.new_line(Line::new(String::from(line.to_owned()))));
+                }
+                Err(_) => {
+                    self.new_line(Line::new_empty());
+                }
+            }
         }
     }
 
@@ -101,11 +95,11 @@ impl LineList {
                 break;
             }
 
-            self.print_line();
+            self.print_line(max_rows);
             self.row += 1;
             printf!("\n");
         }
-        self.print_line();
+        self.print_line(max_rows);
     }
 
     pub fn print_all_from_top(&mut self, max_rows: usize) {
@@ -115,15 +109,23 @@ impl LineList {
         self.row = current_row;
     }
 
-    pub fn print_line(&self) {
+    pub fn print_line(&self, max_rows: usize) {
+        printf!("\r\x1b[3C");
+        for _ in 0..max_rows - 1 {
+            printf!(" ");
+        }
+        printf!("\r\x1b[3C");
+        let rowc = format!("{}", self.row).len();
+        let padding = format!("{}", self.e.len()).len() - rowc;
+        for _ in 0..padding {
+            printf!(" ");
+        }
+
         printf!(
             "{}",
-            format!("\x1b[2K\r{} {}", self.row, self.e[self.row - 1].str)
+            format!("\x1b[1;35m{}\x1b[0m {}", self.row, self.e[self.row - 1].str)
         );
-        printf!(
-            "\r\x1b[{}G",
-            self.current_pos() + format!("{}", self.row).len() + 2
-        );
+        printf!("\r\x1b[{}G", self.current_pos() + rowc + padding + 2 + 3);
     }
 
     pub fn current_pos(&self) -> usize {
