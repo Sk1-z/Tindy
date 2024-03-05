@@ -16,20 +16,25 @@ macro_rules! printlnf {
 
 mod draw;
 mod line;
-mod mode;
 mod terminal;
 
 use line::{Line, LineList};
-use mode::{escape::handle_escape, insert::handle_insert, Mode};
 use std::env::args;
 use std::fs::{create_dir_all, remove_file, File, OpenOptions};
 use std::io::{stdout, Read, Write};
 use std::path::Path;
-use terminal::Terminal;
+use terminal::*;
 
 fn main() {
-    let term = Terminal::new();
+    let term = Terminal::get();
     term.make_raw();
+    // printf!("\x1b[2J\x1b[H");
+    // printlnf!("1");
+    // for _ in 0..term.row_sz - 1 {
+    //     printlnf!("2");
+    // }
+    //
+    // loop {}
 
     let mut file_name: &Path;
     let argv: Vec<String> = args().collect();
@@ -50,16 +55,16 @@ fn main() {
             Ok(mut file) => {
                 let mut file_content = String::new();
                 file.read_to_string(&mut file_content).unwrap();
-                let file_lines: Vec<&str> = file_content.split("\n").collect();
+                let file_lines: Vec<&str> = file_content.trim_end().split("\n").collect();
+                file_lines
+                    .iter()
+                    .for_each(|line| lines.new_line(Line::new(String::from(line.to_owned()))));
 
-                for i in 0..file_lines.len() {
-                    lines.new_line(Line::new(String::from(file_lines[i])));
-                    lines.print_line();
-                    if i < file_lines.len() - 1 {
-                        printf!("\n");
-                        lines.row += 1
-                    }
-                }
+                lines.print_all(term.row_sz);
+                printf!("\x1b[H");
+                lines.row = 1;
+                lines.reset_line_pos();
+                lines.print_line();
             }
             Err(_) => {
                 lines.new_line(Line::new_empty());
@@ -77,18 +82,13 @@ fn main() {
         .open(format!("/tmp/tindy/{}", file_name.to_str().unwrap()))
         .unwrap();
 
-    let mut mode = Mode::Escape;
-
     loop {
-        match mode {
-            Mode::Escape => {
-                mode = handle_escape(&mut lines, (&mut file, &mut temp_file));
-            }
-            Mode::Insert => {
-                mode = handle_insert(&mut lines);
-            }
-            Mode::Quit => {
-                printf!("\x1b[0m");
+        let c = get_char();
+
+        match c as usize {
+            // ctrl-e or  ctrl-w
+            5 | 23 => {
+                printf!("\n\x1b[2J\x1b[0m");
                 let joined_lines = lines.join();
 
                 // printlnf!("\n{}", joined_lines);
@@ -98,6 +98,142 @@ fn main() {
 
                 break;
             }
+            // Handle arrow presses which are sent as three characters or exit
+            // 27 ESC -> 91 [ -> A, B, C, or D
+            27 => {
+                // Discard [
+                _ = get_char();
+                match get_char() as usize {
+                    // up arrow
+                    65 => {
+                        if lines.row == lines.top_row && lines.row != 1 {
+                            printf!("\x1b[2J\x1b[H");
+
+                            lines.top_row -= term.row_sz;
+                            lines.row = lines.top_row;
+
+                            lines.print_all(term.row_sz);
+                        } else {
+                            if lines.row != 1 {
+                                lines.row -= 1;
+
+                                printf!("\x1b[1F");
+                                lines.print_line();
+                            }
+                        }
+                    }
+                    // down arrow
+                    66 => {
+                        if lines.row == lines.top_row + term.row_sz - 1 {
+                            printf!("\x1b[2J\x1b[H");
+
+                            lines.row += 1;
+                            lines.top_row = lines.row;
+
+                            lines.print_all(term.row_sz);
+                            printf!("\x1b[H");
+
+                            lines.row = lines.top_row;
+                            lines.print_line();
+                        } else {
+                            if lines.line_count() != lines.row {
+                                lines.row += 1;
+
+                                printf!("\x1b[1E");
+                                lines.print_line();
+                            }
+                        }
+                    }
+                    // right arrow
+                    67 => {
+                        if lines.current_pos() != lines.line_length() {
+                            lines.set_pos_relative(1, false);
+                            lines.print_line();
+                        }
+                    }
+                    // left arrow
+                    68 => {
+                        if lines.current_pos() != 0 {
+                            lines.set_pos_relative(1, true);
+                            lines.print_line();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // Enter
+            10 => {
+                let chunk = lines.remove_chunk(lines.current_pos(), lines.line_length());
+                if lines.line_count() == lines.row {
+                    lines.new_line(Line::new_empty());
+                } else {
+                    lines.insert_line(lines.row, Line::new_empty());
+                }
+                lines.row += 1;
+
+                lines.reset_line_pos();
+                for c in chunk.chars() {
+                    lines.add(c);
+                }
+                lines.reset_line_pos();
+
+                printf!("\x1b[2J\x1b[H");
+                if lines.row == lines.top_row + term.row_sz {
+                    lines.top_row = lines.row;
+                    lines.print_all(term.row_sz);
+
+                    printf!("\x1b[H");
+                    lines.row = lines.top_row;
+                    lines.print_line();
+                } else {
+                    lines.print_all_from_top(term.row_sz);
+                    printf!("\x1b[H");
+                    let move_sz = (lines.row % term.row_sz) - 1;
+                    if move_sz != 0 {
+                        printf!("\x1b[{}E", move_sz);
+                    }
+                }
+
+                lines.print_line();
+            }
+            // Backspace or ctrl-x
+            127 | 24 => {
+                if !(lines.current_pos() == 0 && lines.row == 1) {
+                    if lines.current_pos() == 0 {
+                        let chunk = lines.remove_chunk(0, lines.line_length());
+                        lines.remove_line();
+
+                        lines.row -= 1;
+                        for c in chunk.chars() {
+                            lines.add(c);
+                        }
+                        lines.set_pos_relative(chunk.len(), true);
+
+                        printf!("\x1b[2J\x1b[H");
+                        if lines.row + 1 == lines.top_row && lines.row != 1 {
+                            lines.top_row -= term.row_sz;
+                            lines.row = lines.top_row;
+                            lines.print_all(term.row_sz);
+                        } else {
+                            lines.print_all_from_top(term.row_sz);
+                            printf!("\x1b[H");
+                            let move_sz = (lines.row % term.row_sz) - 1;
+                            if move_sz != 0 {
+                                printf!("\x1b[{}E", move_sz);
+                            }
+                        }
+                        lines.print_line();
+                    } else {
+                        lines.remove();
+                        lines.print_line();
+                    }
+                }
+            }
+            32..=126 => {
+                lines.add(c);
+                lines.print_line();
+            }
+            _ => {}
         }
     }
 

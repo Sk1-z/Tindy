@@ -14,7 +14,7 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new() -> Terminal {
+    pub fn get() -> Terminal {
         let mut sz: winsize = winsize {
             ws_row: 0,
             ws_col: 0,

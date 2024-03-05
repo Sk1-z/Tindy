@@ -32,6 +32,7 @@ impl Line {
 }
 
 pub struct LineList {
+    pub top_row: usize,
     pub row: usize,
     e: Vec<Line>,
 }
@@ -39,6 +40,7 @@ pub struct LineList {
 impl LineList {
     pub fn new() -> LineList {
         LineList {
+            top_row: 1,
             row: 1,
             e: Vec::new(),
         }
@@ -50,7 +52,11 @@ impl LineList {
     }
 
     pub fn new_line(&mut self, line: Line) {
-        self.e.push(line)
+        self.e.push(line);
+    }
+
+    pub fn insert_line(&mut self, i: usize, line: Line) {
+        self.e.insert(i, line)
     }
 
     pub fn remove_line(&mut self) {
@@ -88,6 +94,27 @@ impl LineList {
         chunk
     }
 
+    pub fn print_all(&mut self, max_rows: usize) {
+        let s = self.row;
+        for i in 0..self.e.len() - s {
+            if i == max_rows - 1 {
+                break;
+            }
+
+            self.print_line();
+            self.row += 1;
+            printf!("\n");
+        }
+        self.print_line();
+    }
+
+    pub fn print_all_from_top(&mut self, max_rows: usize) {
+        let current_row = self.row;
+        self.row = self.top_row;
+        self.print_all(max_rows);
+        self.row = current_row;
+    }
+
     pub fn print_line(&self) {
         printf!(
             "{}",
@@ -109,5 +136,9 @@ impl LineList {
         } else {
             self.e[self.row - 1].pos += pos;
         }
+    }
+
+    pub fn reset_line_pos(&mut self) {
+        self.e[self.row - 1].pos = 0;
     }
 }
