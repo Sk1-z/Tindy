@@ -28,13 +28,13 @@ impl MovementHandler {
             lines.top_row -= term.row_sz;
             lines.row = lines.top_row;
 
-            lines.print_all(term.row_sz);
+            lines.print_all(&term);
         } else {
             if lines.row != 1 {
                 lines.row -= 1;
 
                 printf!("\x1b[1F");
-                lines.print_line(term.row_sz);
+                lines.print_line(term.col_sz);
             }
         }
     }
@@ -50,17 +50,17 @@ impl MovementHandler {
             lines.row += 1;
             lines.top_row = lines.row;
 
-            lines.print_all(term.row_sz);
+            lines.print_all(&term);
             cursor::home();
 
             lines.row = lines.top_row;
-            lines.print_line(term.row_sz);
+            lines.print_line(term.col_sz);
         } else {
             if lines.line_count() != lines.row {
                 lines.row += 1;
 
                 printf!("\x1b[1E");
-                lines.print_line(term.row_sz);
+                lines.print_line(term.col_sz);
             }
         }
     }
@@ -70,7 +70,7 @@ impl MovementHandler {
 
         if lines.current_pos() != lines.line_length() {
             lines.set_pos_relative(1, false);
-            lines.print_line(term.row_sz);
+            lines.print_line(term.col_sz);
         }
     }
     pub fn handle_left(&mut self) {
@@ -79,7 +79,25 @@ impl MovementHandler {
 
         if lines.current_pos() != 0 {
             lines.set_pos_relative(1, true);
-            lines.print_line(term.row_sz);
+            lines.print_line(term.col_sz);
         }
+    }
+
+    pub fn handle_move_to_start(&mut self) {
+        let term = self.term.borrow();
+        let mut lines = self.lines.borrow_mut();
+
+        lines.reset_line_pos();
+        lines.print_line(term.col_sz);
+    }
+
+    pub fn handle_move_to_end(&mut self) {
+        let term = self.term.borrow();
+        let mut lines = self.lines.borrow_mut();
+
+        lines.reset_line_pos();
+        let line_length = lines.line_length();
+        lines.set_pos_relative(line_length, false);
+        lines.print_line(term.col_sz);
     }
 }

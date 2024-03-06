@@ -1,7 +1,7 @@
 use super::Line;
+use crate::Terminal;
 use std::fs::File;
 use std::io::{stdout, Read, Write};
-use std::path::Path;
 
 pub struct LineList {
     pub top_row: usize,
@@ -18,24 +18,22 @@ impl LineList {
         }
     }
 
-    pub fn load_from_file(&mut self, file_name: &Path) {
-        {
-            printf!("\x1b[2J\x1b[H");
+    pub fn load_from_file(&mut self, file_name: &String) {
+        printf!("\x1b[2J\x1b[H");
 
-            let reading_file = File::open(file_name);
+        let reading_file = File::open(file_name);
 
-            match reading_file {
-                Ok(mut file) => {
-                    let mut file_content = String::new();
-                    file.read_to_string(&mut file_content).unwrap();
-                    let file_lines: Vec<&str> = file_content.trim_end().split("\n").collect();
-                    file_lines
-                        .iter()
-                        .for_each(|line| self.new_line(Line::new(String::from(line.to_owned()))));
-                }
-                Err(_) => {
-                    self.new_line(Line::new_empty());
-                }
+        match reading_file {
+            Ok(mut file) => {
+                let mut file_content = String::new();
+                file.read_to_string(&mut file_content).unwrap();
+                let file_lines: Vec<&str> = file_content.trim_end().split("\n").collect();
+                file_lines
+                    .iter()
+                    .for_each(|line| self.new_line(Line::new(String::from(line.to_owned()))));
+            }
+            Err(_) => {
+                self.new_line(Line::new_empty());
             }
         }
     }
@@ -88,30 +86,30 @@ impl LineList {
         chunk
     }
 
-    pub fn print_all(&mut self, max_rows: usize) {
+    pub fn print_all(&mut self, term: &Terminal) {
         let s = self.row;
         for i in 0..self.e.len() - s {
-            if i == max_rows - 1 {
+            if i == term.row_sz - 1 {
                 break;
             }
 
-            self.print_line(max_rows);
+            self.print_line(term.col_sz);
             self.row += 1;
             printf!("\n");
         }
-        self.print_line(max_rows);
+        self.print_line(term.col_sz);
     }
 
-    pub fn print_all_from_top(&mut self, max_rows: usize) {
+    pub fn print_all_from_top(&mut self, term: &Terminal) {
         let current_row = self.row;
         self.row = self.top_row;
-        self.print_all(max_rows);
+        self.print_all(term);
         self.row = current_row;
     }
 
-    pub fn print_line(&self, max_rows: usize) {
+    pub fn print_line(&self, max_cols: usize) {
         printf!("\r\x1b[3C");
-        for _ in 0..max_rows - 1 {
+        for _ in 0..max_cols - 6 {
             printf!(" ");
         }
         printf!("\r\x1b[3C");
