@@ -22,7 +22,11 @@ impl ActionHandler {
     }
 
     pub fn start_server(file_name: String) {
-        let script = read_to_string("py/server.py").unwrap();
+        let script = read_to_string(format!(
+            "{}/.tindy/py/server.py",
+            std::env::var_os("HOME").unwrap().to_str().unwrap()
+        ))
+        .unwrap();
 
         Python::with_gil(|py| {
             let func: Py<PyAny> = PyModule::from_code(py, &script, "python/server.py", "py.server")

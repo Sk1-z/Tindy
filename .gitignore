@@ -1,2 +1,4 @@
 target/
+build/
+tindy.tar
 debug.md

@@ -37,16 +37,22 @@ fn main() {
     term.make_raw();
 
     let file_name: String;
-    let mut argv: Vec<String> = args().collect();
+    let argv: Vec<String> = args().collect();
     if argv.len() == 2 {
-        argv[1].push_str(".md");
-        file_name = argv[1].clone();
+        file_name = format!(
+            "{}/{}",
+            std::env::current_dir().unwrap().to_str().unwrap(),
+            argv[1]
+        );
     } else {
         printlnf!("\x1b[1;91m[ERROR]\x1b[0m Must pass a file name. If it does not exist it will be created.");
         exit(1);
     }
 
-    match File::open("py/server.py") {
+    match File::open(format!(
+        "{}/.tindy/py/server.py",
+        std::env::var_os("HOME").unwrap().to_str().unwrap()
+    )) {
         Ok(_) => (),
         Err(_) => {
             println!("\x1b[31mTindy cannot run without the neccesary scripts, ensure they are in the same directory as the executable.");
